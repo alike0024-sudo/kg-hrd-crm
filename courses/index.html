@@ -972,59 +972,7 @@ function fitTableHeight(){
 window.addEventListener('resize', fitTableHeight);
 window.addEventListener('load', fitTableHeight);
 
-// ── 페이지 로드 시 클라우드 설정 자동 적용
-window.addEventListener('load', function(){
-  const btn = document.getElementById('btnCloudLoad');
-  if(btn){ btn.textContent = '☁️ 불러오는 중...'; btn.disabled = true; }
-  fetch(_GAS_URL)
-  .then(r => r.json())
-  .then(res => {
-    if(btn){ btn.textContent = '☁️ 설정 불러오기'; btn.disabled = false; }
-    if(!res.ok || !res.data) return;
-    const s = res.data;
-
-    // 컬럼 표시 설정 복원
-    if(s.columnDefs && s.columnDefs.length){
-      s.columnDefs.forEach(function(saved){
-        const col = COLUMN_DEFS.find(function(c){ return c.key === saved.key; });
-        if(col){
-          col.visible = saved.visible;
-          if(saved.label) col.label = saved.label;
-        }
-      });
-      // 저장된 순서로 COLUMN_DEFS 재정렬
-      const ordered = [];
-      s.columnDefs.forEach(function(saved){
-        const col = COLUMN_DEFS.find(function(c){ return c.key === saved.key; });
-        if(col) ordered.push(col);
-      });
-      // 저장에 없는 컬럼은 뒤에 추가
-      COLUMN_DEFS.forEach(function(col){
-        if(!ordered.find(function(c){ return c.key === col.key; })) ordered.push(col);
-      });
-      COLUMN_DEFS.length = 0;
-      ordered.forEach(function(c){ COLUMN_DEFS.push(c); });
-    }
-
-    if(s.sidebarSections && s.sidebarSections.length) SIDEBAR_SECTIONS = s.sidebarSections;
-    if(s.detailSections  && s.detailSections.length)  DETAIL_SECTIONS  = s.detailSections;
-    if(s.logoSub){
-      const el = document.getElementById('logoSub');
-      if(el) el.textContent = s.logoSub;
-    }
-
-    syncLabels();
-    buildSidebarFilters();
-    renderTableHead();
-    renderTable();
-
-    const savedAt = s.savedAt ? new Date(s.savedAt).toLocaleString('ko-KR') : '';
-    showToast('☁️ 설정 불러오기 완료' + (savedAt?' · '+savedAt:''), 's');
-  })
-  .catch(function(){
-    if(btn){ btn.textContent = '☁️ 설정 불러오기'; btn.disabled = false; }
-  });
-});
+// ── 클라우드 설정: 버튼 클릭 시에만 적용
 window.addEventListener('scroll', fitTableHeight);
 window.addEventListener('load', function(){
   fitTableHeight();
@@ -1902,6 +1850,7 @@ function saveToCloud(){
 }
 
 function loadFromCloud(){
+  if(!confirm('저장된 컬럼 설정을 불러오시겠습니까?\n현재 설정이 덮어써집니다.')) return;
   const btn = document.getElementById('btnCloudLoad');
   const orig = btn.textContent;
   btn.textContent = '☁️ 불러오는 중...';
