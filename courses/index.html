@@ -972,38 +972,35 @@ function fitTableHeight(){
 window.addEventListener('resize', fitTableHeight);
 window.addEventListener('load', fitTableHeight);
 
-// ── 페이지 로드 시 COURSES가 없으면 클라우드에서 자동 불러오기
+// ── 페이지 로드 시 클라우드 데이터 우선 적용
 window.addEventListener('load', function(){
-  if(!COURSES.length && typeof loadFromCloud === 'function'){
-    // 버튼 없이 조용히 불러오기
-    const btn = document.getElementById('btnCloudLoad');
-    if(btn){ btn.textContent = '☁️ 불러오는 중...'; btn.disabled = true; }
-    fetch(_GAS_URL)
-    .then(r => r.json())
-    .then(res => {
-      if(btn){ btn.textContent = '☁️ 클라우드 불러오기'; btn.disabled = false; }
-      if(!res.ok || !res.data) return;
-      const p = res.data;
-      if(!p.courses || !p.courses.length) return;
-      COURSES = p.courses;
-      if(p.meta && p.meta.columnDefs)      COLUMN_DEFS      = p.meta.columnDefs;
-      if(p.meta && p.meta.sidebarSections) SIDEBAR_SECTIONS = p.meta.sidebarSections;
-      if(p.meta && p.meta.detailSections)  DETAIL_SECTIONS  = p.meta.detailSections;
-      // logoSub 복원
-      if(p.meta && p.meta.logoSub){
-        const el = document.getElementById('logoSub');
-        if(el) el.textContent = p.meta.logoSub;
-      }
-      buildSidebarFilters();
-      renderTable();
-      const savedAt = p.meta && p.meta.savedAt
-        ? new Date(p.meta.savedAt).toLocaleString('ko-KR') : '';
-      showToast('☁️ 클라우드에서 자동 불러오기 완료 (' + COURSES.length + '건' + (savedAt?' · '+savedAt:'') + ')', 's');
-    })
-    .catch(function(){
-      if(btn){ btn.textContent = '☁️ 클라우드 불러오기'; btn.disabled = false; }
-    });
-  }
+  const btn = document.getElementById('btnCloudLoad');
+  if(btn){ btn.textContent = '☁️ 불러오는 중...'; btn.disabled = true; }
+  fetch(_GAS_URL)
+  .then(r => r.json())
+  .then(res => {
+    if(btn){ btn.textContent = '☁️ 클라우드 불러오기'; btn.disabled = false; }
+    if(!res.ok || !res.data) return; // 저장된 데이터 없으면 내장 데이터 유지
+    const p = res.data;
+    if(!p.courses || !p.courses.length) return;
+    // 클라우드 데이터로 덮어쓰기
+    COURSES = p.courses;
+    if(p.meta && p.meta.columnDefs)      COLUMN_DEFS      = p.meta.columnDefs;
+    if(p.meta && p.meta.sidebarSections) SIDEBAR_SECTIONS = p.meta.sidebarSections;
+    if(p.meta && p.meta.detailSections)  DETAIL_SECTIONS  = p.meta.detailSections;
+    if(p.meta && p.meta.logoSub){
+      const el = document.getElementById('logoSub');
+      if(el) el.textContent = p.meta.logoSub;
+    }
+    buildSidebarFilters();
+    renderTable();
+    const savedAt = p.meta && p.meta.savedAt
+      ? new Date(p.meta.savedAt).toLocaleString('ko-KR') : '';
+    showToast('☁️ 클라우드 데이터 적용 (' + COURSES.length + '건' + (savedAt?' · '+savedAt:'') + ')', 's');
+  })
+  .catch(function(){
+    if(btn){ btn.textContent = '☁️ 클라우드 불러오기'; btn.disabled = false; }
+  });
 });
 window.addEventListener('scroll', fitTableHeight);
 window.addEventListener('load', function(){
