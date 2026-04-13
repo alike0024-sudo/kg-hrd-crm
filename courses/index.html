@@ -149,14 +149,28 @@ tbody td.center{text-align:center}
 // ── 설정 ──
 const SHEET_ID = '1_c86pZM6F4fkFz9T1O31brau3Jlsf3_d';
 const TABS = [
-  { name:'직무(공통)', gid:'1693651428' },
+  { name:'직무(공통)', gid:'1825892502' },
   { name:'법정필수',   gid:'316906315'  },
   { name:'외국어',     gid:'78329365'   },
   { name:'전화외국어', gid:'653358122'  },
 ];
-// 데이터 헤더 행 (0-indexed, 7번째 줄 = index 7)
-const HEADER_ROW = 7;
-const DATA_START  = 8;
+
+// 고정 컬럼 인덱스 매핑 (0-based)
+// 시트: No(0), 대분류(1), 중분류(2), 소분류(3), 대상(4), 과정유형(5),
+//       포팅방식(6), 콘텐츠형태(7), 과정명(8), 변경전과정키(9), 과정키(10),
+//       미리보기(11), 모바일여부(12), 교육비(13),
+//       대기업환급(14), 대기업실비(15), 중견환급(16), 중견실비(17),
+//       우선환급(18), 우선실비(19), 환급여부(20), 학습기간(21), 학습시간(22)
+const COL = {
+  no:0, cat1:1, cat2:2, cat3:3, target:4, type:5,
+  porting:6, content:7, name:8, oldKey:9, key:10,
+  preview:11, mobile:12, fee:13,
+  bigRefund:14, bigReal:15, midRefund:16, midReal:17,
+  priRefund:18, priReal:19, refundYn:20, period:21, hours:22
+};
+
+// 데이터 시작 행 (0-indexed) — 헤더가 여러 줄이므로 실제 데이터 첫 줄
+const DATA_START = 15;
 
 // ── 상태 ──
 let allData   = {};   // { tabName: [rows...] }
@@ -204,21 +218,39 @@ async function fetchTab(gid){
 
 function parseCSV(text){
   const lines = text.split('\n');
-  if(lines.length <= HEADER_ROW) return [];
-  
-  // 헤더 파싱
-  const headers = csvLine(lines[HEADER_ROW]);
-  
-  // 데이터 파싱
   const rows = [];
   for(let i = DATA_START; i < lines.length; i++){
     const line = lines[i].trim();
     if(!line) continue;
     const cols = csvLine(line);
-    if(!cols[8] && !cols[10]) continue; // 과정명, 과정키 없으면 스킵
-    const row = {};
-    headers.forEach((h,j)=>{ row[h.trim()] = (cols[j]||'').trim(); });
-    rows.push(row);
+    const name = (cols[COL.name]||'').trim();
+    const key  = (cols[COL.key]||'').trim();
+    if(!name && !key) continue;
+    rows.push({
+      no:       (cols[COL.no]||'').trim(),
+      cat1:     (cols[COL.cat1]||'').trim(),
+      cat2:     (cols[COL.cat2]||'').trim(),
+      cat3:     (cols[COL.cat3]||'').trim(),
+      target:   (cols[COL.target]||'').trim(),
+      type:     (cols[COL.type]||'').trim(),
+      porting:  (cols[COL.porting]||'').trim(),
+      content:  (cols[COL.content]||'').trim(),
+      name,
+      oldKey:   (cols[COL.oldKey]||'').trim(),
+      key,
+      preview:  (cols[COL.preview]||'').trim(),
+      mobile:   (cols[COL.mobile]||'').trim(),
+      fee:      (cols[COL.fee]||'').trim(),
+      bigRefund:(cols[COL.bigRefund]||'').trim(),
+      bigReal:  (cols[COL.bigReal]||'').trim(),
+      midRefund:(cols[COL.midRefund]||'').trim(),
+      midReal:  (cols[COL.midReal]||'').trim(),
+      priRefund:(cols[COL.priRefund]||'').trim(),
+      priReal:  (cols[COL.priReal]||'').trim(),
+      refundYn: (cols[COL.refundYn]||'').trim(),
+      period:   (cols[COL.period]||'').trim(),
+      hours:    (cols[COL.hours]||'').trim(),
+    });
   }
   return rows;
 }
@@ -265,12 +297,10 @@ function renderTab(){
 }
 
 function buildFilters(rows){
-  const cats  = [...new Set(rows.map(r=>r['대분류']||'').filter(Boolean))].sort();
-  const types = [...new Set(rows.map(r=>r['과정유형']||'').filter(Boolean))].sort();
-
+  const cats  = [...new Set(rows.map(r=>r.cat1).filter(Boolean))].sort();
+  const types = [...new Set(rows.map(r=>r.type).filter(Boolean))].sort();
   const catSel  = document.getElementById('catFilter');
   const typeSel = document.getElementById('typeFilter');
-
   catSel.innerHTML  = '<option value="">전체 대분류</option>'  + cats.map(c=>`<option>${c}</option>`).join('');
   typeSel.innerHTML = '<option value="">전체 과정유형</option>' + types.map(t=>`<option>${t}</option>`).join('');
 }
@@ -282,17 +312,16 @@ function applyFilter(){
   const mob  = document.getElementById('mobileFilter').value;
 
   let rows = (allData[curTab]||[]).filter(r=>{
-    if(cat  && r['대분류']   !== cat)  return false;
-    if(type && r['과정유형'] !== type) return false;
-    if(mob  && r['모바일여부'] !== mob) return false;
+    if(cat  && r.cat1   !== cat)  return false;
+    if(type && r.type   !== type) return false;
+    if(mob  && r.mobile !== mob)  return false;
     if(q){
-      const hay = (r['과정명']||'') + (r['과정키']||'') + (r['CP명']||'') + (r['중분류']||'');
+      const hay = r.name + r.key + r.cat2 + r.cat1;
       if(!hay.toLowerCase().includes(q)) return false;
     }
     return true;
   });
 
-  // 정렬
   if(sortCol){
     rows = [...rows].sort((a,b)=>{
       const av = a[sortCol]||'', bv = b[sortCol]||'';
@@ -315,19 +344,19 @@ function renderTable(rows){
   }
 
   const cols = [
-    {key:'No.',       label:'No',    w:40},
-    {key:'과정명',    label:'과정명', w:320},
-    {key:'과정키',    label:'과정키', w:70},
-    {key:'대분류',    label:'대분류', w:80},
-    {key:'중분류',    label:'중분류', w:80},
-    {key:'과정유형',  label:'유형',   w:70},
-    {key:'모바일여부',label:'모바일', w:55},
-    {key:'교육비',    label:'교육비', w:80},
-    {key:'우선지원대상기업 환급액', label:'우선환급', w:75},
-    {key:'중견기업 환급액',        label:'중견환급', w:75},
-    {key:'대기업 환급액',          label:'대기업환급',w:75},
-    {key:'학습기간',  label:'기간',   w:55},
-    {key:'학습시간',  label:'시간',   w:45},
+    {key:'no',       label:'No',    w:40},
+    {key:'name',     label:'과정명', w:320},
+    {key:'key',      label:'과정키', w:70},
+    {key:'cat1',     label:'대분류', w:80},
+    {key:'cat2',     label:'중분류', w:80},
+    {key:'type',     label:'유형',   w:70},
+    {key:'mobile',   label:'모바일', w:55},
+    {key:'fee',      label:'교육비', w:80},
+    {key:'priRefund',label:'우선환급',w:75},
+    {key:'midRefund',label:'중견환급',w:75},
+    {key:'bigRefund',label:'대기업환급',w:75},
+    {key:'period',   label:'기간',   w:55},
+    {key:'hours',    label:'시간',   w:45},
   ];
 
   const thead = `<thead><tr>${cols.map(c=>`
@@ -336,26 +365,25 @@ function renderTable(rows){
     </th>`).join('')}</tr></thead>`;
 
   const tbody = '<tbody>' + rows.map((r,i)=>{
-    const isNew = (r['변경 전\n과정키']||r['변경 전 과정키']||'') === '';
-    const mob = r['모바일여부']||'';
-    const fee = fmtNum(r['교육비']);
+    const isNew = !r.oldKey;
+    const mob = r.mobile||'';
     return `<tr onclick="showDetail(${i})">
-      <td class="center" style="color:var(--text3)">${r['No.']||i+1}</td>
+      <td class="center" style="color:var(--text3)">${r.no||i+1}</td>
       <td>
         ${isNew?'<span class="badge badge-new" style="margin-right:4px">NEW</span>':''}
-        ${r['과정명']||''}
+        ${r.name}
       </td>
-      <td class="center" style="font-family:monospace;font-size:11px;color:var(--text3)">${r['과정키']||''}</td>
-      <td><span class="badge badge-blue">${r['대분류']||''}</span></td>
-      <td style="color:var(--text2)">${r['중분류']||''}</td>
-      <td><span class="badge badge-gray">${r['과정유형']||''}</span></td>
+      <td class="center" style="font-family:monospace;font-size:11px;color:var(--text3)">${r.key}</td>
+      <td><span class="badge badge-blue">${r.cat1}</span></td>
+      <td style="color:var(--text2)">${r.cat2}</td>
+      <td><span class="badge badge-gray">${r.type}</span></td>
       <td class="center"><span class="badge ${mob==='Y'?'badge-green':'badge-gray'}">${mob||'-'}</span></td>
-      <td class="num">${fee}</td>
-      <td class="num">${fmtNum(r['우선지원대상기업 환급액']||r['우선지원\n대상기업\n환급액']||'')}</td>
-      <td class="num">${fmtNum(r['중견기업 환급액']||r['중견기업\n환급액']||'')}</td>
-      <td class="num">${fmtNum(r['대기업 환급액']||r['대기업\n환급액']||'')}</td>
-      <td class="center">${r['학습기간']||''}</td>
-      <td class="center">${r['학습시간']||''}</td>
+      <td class="num">${fmtNum(r.fee)}</td>
+      <td class="num">${fmtNum(r.priRefund)}</td>
+      <td class="num">${fmtNum(r.midRefund)}</td>
+      <td class="num">${fmtNum(r.bigRefund)}</td>
+      <td class="center">${r.period}</td>
+      <td class="center">${r.hours}</td>
     </tr>`;
   }).join('') + '</tbody>';
 
@@ -373,26 +401,31 @@ function showDetail(idx){
   if(!r) return;
 
   const fields = [
-    ['과정명', r['과정명']],
-    ['과정키', r['과정키']],
-    ['대분류', r['대분류']],
-    ['중분류', r['중분류']],
-    ['소분류', r['소분류']],
-    ['과정유형', r['과정유형']],
-    ['모바일여부', r['모바일여부']],
-    ['교육비', fmtNum(r['교육비']) + '원'],
-    ['우선지원 환급액', fmtNum(r['우선지원대상기업 환급액']||r['우선지원\n대상기업\n환급액']||'') + '원'],
-    ['중견기업 환급액', fmtNum(r['중견기업 환급액']||r['중견기업\n환급액']||'') + '원'],
-    ['대기업 환급액', fmtNum(r['대기업 환급액']||r['대기업\n환급액']||'') + '원'],
-    ['학습기간', r['학습기간']],
-    ['학습시간', r['학습시간']],
-    ['포팅방식', r['포팅 방식\n(P / L)']||r['포팅방식']||''],
-    ['콘텐츠형태', r['콘텐츠\n형태']||r['콘텐츠형태']||''],
-    ['대상', r['대상']],
-    ['미리보기', r['미리보기'] ? `<a href="${r['미리보기']}" target="_blank" style="color:var(--accent)">Click!</a>` : '-'],
+    ['과정명',      r.name],
+    ['과정키',      r.key],
+    ['변경전 과정키', r.oldKey],
+    ['대분류',      r.cat1],
+    ['중분류',      r.cat2],
+    ['소분류',      r.cat3],
+    ['대상',        r.target],
+    ['과정유형',    r.type],
+    ['포팅방식',    r.porting],
+    ['콘텐츠형태',  r.content],
+    ['모바일여부',  r.mobile],
+    ['교육비',      fmtNum(r.fee)+'원'],
+    ['우선지원 환급액', fmtNum(r.priRefund)+'원'],
+    ['우선지원 실비용', fmtNum(r.priReal)+'원'],
+    ['중견기업 환급액', fmtNum(r.midRefund)+'원'],
+    ['중견기업 실비용', fmtNum(r.midReal)+'원'],
+    ['대기업 환급액',   fmtNum(r.bigRefund)+'원'],
+    ['대기업 실비용',   fmtNum(r.bigReal)+'원'],
+    ['환급여부',    r.refundYn],
+    ['학습기간',    r.period],
+    ['학습시간',    r.hours],
+    ['미리보기',    r.preview ? `<a href="${r.preview}" target="_blank" style="color:var(--accent)">미리보기 열기 →</a>` : '-'],
   ];
 
-  document.getElementById('modalTitle').textContent = r['과정명']||'과정 상세';
+  document.getElementById('modalTitle').textContent = r.name||'과정 상세';
   document.getElementById('modalBody').innerHTML = fields
     .filter(([,v])=>v&&v!=='-'&&v!=='원'&&v!=='0원')
     .map(([l,v])=>`<div class="modal-row"><div class="modal-label">${l}</div><div class="modal-value">${v}</div></div>`)
