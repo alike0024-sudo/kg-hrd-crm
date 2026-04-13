@@ -2681,6 +2681,27 @@ function resetSidebarCfg(){
   renderSidebarCfg();
 }
 
+// ── 앱 시작 시 클라우드 자동 불러오기 ──
+(function autoLoadFromCloud(){
+  fetch(_GAS_URL + '?type=courses')
+  .then(r=>r.json())
+  .then(res=>{
+    if(!res.ok || !res.data) return;
+    const p = res.data;
+    if(!p.courses || !p.courses.length) return;
+    COURSES = p.courses;
+    if(p.meta && p.meta.columnDefs)      COLUMN_DEFS      = p.meta.columnDefs;
+    if(p.meta && p.meta.sidebarSections) SIDEBAR_SECTIONS = p.meta.sidebarSections;
+    if(p.meta && p.meta.detailSections)  DETAIL_SECTIONS  = p.meta.detailSections;
+    buildSidebarFilters();
+    renderTable();
+    const savedAt = p.meta && p.meta.savedAt
+      ? new Date(p.meta.savedAt).toLocaleString('ko-KR') : '';
+    showToast('☁️ 클라우드 데이터 로드 완료 (' + COURSES.length + '건' + (savedAt?' · '+savedAt:'') + ')', 's');
+  })
+  .catch(()=>{});
+})();
+
 </script>
 
 </body></html>
