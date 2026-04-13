@@ -1802,7 +1802,7 @@ function editLogoSub(){
   inp.addEventListener('keydown', e => { if(e.key==='Enter') inp.blur(); });
 }
 
-const _GAS_URL = 'https://script.google.com/macros/s/AKfycbzNX9Q2S6hoE8BpsG0ACs89JtCZZRhDoM5PYHpfKgJ8m9sBIIG7kz7ySsExJxA8mcVk/exec';
+const _GAS_URL = 'https://script.google.com/macros/s/AKfycbyvG8yXDLcuxActXWJi3lIYDhS6i-_83gxGppUiaZ05ZJV0zCN59tyqCF-NLCa2p7nv/exec';
 
 function saveToCloud(){
   if(!COURSES.length){ showToast('저장할 데이터가 없습니다','d'); return; }
@@ -1829,6 +1829,7 @@ function saveToCloud(){
     headers: {'Content-Type': 'text/plain'},
     body: JSON.stringify({
       data: payload,
+      type: 'courses',
       updatedBy: logoSub
     })
   })
@@ -1857,7 +1858,7 @@ function loadFromCloud(){
   btn.textContent = '☁️ 불러오는 중...';
   btn.disabled = true;
 
-  fetch(_GAS_URL)
+  fetch(_GAS_URL + '?type=courses')
   .then(r => r.json())
   .then(res => {
     btn.textContent = orig; btn.disabled = false;
