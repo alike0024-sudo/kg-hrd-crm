@@ -356,6 +356,21 @@ td{padding:9px 13px;vertical-align:middle;}
 .dp-cfg-add-sec button{padding:6px 14px;border-radius:7px;border:none;background:var(--primary);color:#fff;font-size:12px;font-weight:600;cursor:pointer;}
 .dp-cfg-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
 </style>
+<!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+    apiKey: "AIzaSyDN2IhVrVSdBLGHe-T8Zx-DNNFyGxqbKLI",
+    authDomain: "kgeduone-courses.firebaseapp.com",
+    databaseURL: "https://kgeduone-courses-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "kgeduone-courses",
+    storageBucket: "kgeduone-courses.firebasestorage.app",
+    messagingSenderId: "74773025773",
+    appId: "1:74773025773:web:491e04c8cf6dbb79b04de4"
+  });
+    const _fbDb = firebase.database();
+  </script>
 </head>
 <body>
 <header class="header">
@@ -382,6 +397,7 @@ td{padding:9px 13px;vertical-align:middle;}
       <button class="btn-ghost" style="background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.45)" onclick="openExportModal()">🔒 고객용 내보내기</button>
       <button class="btn-ghost" id="btnCloudSave" style="background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.45)" onclick="saveToCloud()">☁️ 설정 저장</button>
       <button class="btn-ghost" id="btnCloudLoad" style="background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.45)" onclick="loadFromCloud()">☁️ 설정 불러오기</button>
+      <button class="btn-ghost" style="background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.45)" onclick="fbLoadCourses()">☁️ 데이터 불러오기</button>
     </div>
   </div>
 </header>
@@ -885,6 +901,7 @@ function applyColumnDefs(){
   closeHeaderModal();
   hasChanges=true; updateStats();
   showToast('컬럼 설정이 적용되었습니다.','s');
+  autoSaveSettings();
 }
 function resetColumnDefs(){
   tempDefs = [
@@ -972,7 +989,9 @@ function fitTableHeight(){
 window.addEventListener('resize', fitTableHeight);
 window.addEventListener('load', function(){
   fitTableHeight();
-  // localStorage에 저장된 설정 자동 복원
+  // Firebase 실시간 설정 감지 시작
+  if(typeof _fbDb !== 'undefined') fbWatchSettings();
+  // localStorage 먼저 확인 → 없으면 클라우드에서 자동 불러오기
   try{
     const raw = localStorage.getItem('kg_settings');
     if(raw){
@@ -980,8 +999,20 @@ window.addEventListener('load', function(){
       applySettings(s);
       const savedAt = s.savedAt ? new Date(s.savedAt).toLocaleString('ko-KR') : '';
       showToast('설정 자동 복원됨' + (savedAt?' · '+savedAt:''), 's');
+      return;
     }
   }catch(e){}
+  // localStorage 없으면 클라우드에서 조용히 불러오기
+  fetch(_GAS_URL + '?type=settings')
+  .then(r => r.json())
+  .then(function(res){
+    if(!res.ok || !res.data) return;
+    applySettings(res.data);
+    try{ localStorage.setItem('kg_settings', JSON.stringify(res.data)); }catch(e){}
+    const savedAt = res.data.savedAt ? new Date(res.data.savedAt).toLocaleString('ko-KR') : '';
+    showToast('☁️ 설정 자동 복원됨' + (savedAt?' · '+savedAt:''), 's');
+  })
+  .catch(function(){});
 });
 
 // ── 클라우드 설정: 버튼 클릭 시에만 적용
@@ -1668,6 +1699,9 @@ function applyImport(){
   // 업로드 완료 후 패널 닫기
   uploadOpen=false;
   document.getElementById('uploadPanel').classList.remove('open');
+  // 엑셀 업로드 완료 → 클라우드에 전체 데이터 자동 저장
+  autoSaveCourses();
+  fbSaveCourses();
 }
 function discardImport(){pendingMapped=null;document.getElementById('importResult').classList.remove('show');document.getElementById('mapModal').classList.remove('show');}
 function cancelMapping(){parsedRows=[];fileHeaders=[];pendingMapped=null;document.getElementById('mapModal').classList.remove('show');}
@@ -1784,12 +1818,147 @@ function editLogoSub(){
     div.textContent = val || cur;
     inp.replaceWith(div);
   };
-  inp.addEventListener('blur', () => commit(inp.value));
+  inp.addEventListener('blur', () => { commit(inp.value); setTimeout(autoSaveSettings, 100); });
   inp.addEventListener('keydown', e => { if(e.key==='Enter') inp.blur(); });
 }
 
-const _GAS_URL = 'https://script.google.com/macros/s/AKfycbyjJ3Bvw3gzguVP5REG7JFtX7FgfI4ooTgb7kX4CTqpWGUmw6zxQG0bibOrigF8I8Aa/exec';
+const _GAS_URL = 'https://script.google.com/macros/s/AKfycbwqqQ3UycDj0f2H7UhWay8G_PDF7V6qM0aWlj0JpcRjcC7eaD4iuKQG5B4E8L58PPA/exec';
 
+
+
+// ── 설정 변경 시 자동 저장 (localStorage + 클라우드)
+
+// ── 엑셀 업로드 후 전체 데이터 자동 저장
+function autoSaveCourses(){
+  if(!COURSES.length) return;
+  const logoSub = (document.getElementById('logoSub')||{}).textContent||'';
+  const payload = {
+    courses: COURSES,
+    meta: {
+      logoSub: logoSub,
+      count: COURSES.length,
+      columnDefs: COLUMN_DEFS,
+      sidebarSections: SIDEBAR_SECTIONS,
+      detailSections: DETAIL_SECTIONS
+    }
+  };
+  showToast('☁️ 클라우드에 데이터 저장 중... (' + COURSES.length + '건)', 's');
+  fetch(_GAS_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify({type: 'courses', data: payload, updatedBy: logoSub})
+  })
+  .then(r => r.json())
+  .then(function(res){
+    if(res.ok){
+      showToast('☁️ 데이터 저장 완료! (' + COURSES.length + '건)', 's');
+    }
+  })
+  .catch(function(){});
+}
+
+
+// ════════════════════════════════════════
+// Firebase Realtime Database 연동
+// ════════════════════════════════════════
+
+function fbSaveSettings(){
+  const logoSub = (document.getElementById('logoSub')||{}).textContent||'';
+  const settings = {
+    columnDefs: COLUMN_DEFS.map(function(c){ return {key:c.key,label:c.label,visible:c.visible}; }),
+    sidebarSections: SIDEBAR_SECTIONS,
+    detailSections: DETAIL_SECTIONS,
+    logoSub: logoSub,
+    savedAt: new Date().toISOString()
+  };
+  try{ localStorage.setItem('kg_settings', JSON.stringify(settings)); }catch(e){}
+  _fbDb.ref('settings').set(settings)
+    .catch(function(){});
+}
+
+function fbSaveCourses(){
+  if(!COURSES.length) return;
+  const logoSub = (document.getElementById('logoSub')||{}).textContent||'';
+  showToast('☁️ Firebase에 데이터 저장 중... (' + COURSES.length + '건)', 's');
+  const payload = {
+    courses: COURSES,
+    meta: {
+      logoSub: logoSub,
+      count: COURSES.length,
+      savedAt: new Date().toISOString()
+    }
+  };
+  _fbDb.ref('courses').set(payload)
+  .then(function(){
+    showToast('☁️ Firebase 저장 완료! (' + COURSES.length + '건)', 's');
+  })
+  .catch(function(err){
+    showToast('Firebase 저장 오류: ' + err.message, 'd');
+  });
+}
+
+function fbLoadCourses(){
+  const btn = document.getElementById('btnCloudLoad');
+  if(btn){ btn.textContent='☁️ 불러오는 중...'; btn.disabled=true; }
+  _fbDb.ref('courses').once('value')
+  .then(function(snap){
+    if(btn){ btn.textContent='☁️ 설정 불러오기'; btn.disabled=false; }
+    const p = snap.val();
+    if(!p || !p.courses || !p.courses.length){
+      showToast('저장된 데이터가 없습니다','d'); return;
+    }
+    COURSES = p.courses;
+    if(p.meta && p.meta.logoSub){
+      const el = document.getElementById('logoSub');
+      if(el) el.textContent = p.meta.logoSub;
+    }
+    buildSidebarFilters(); renderTable();
+    const savedAt = p.meta && p.meta.savedAt ? new Date(p.meta.savedAt).toLocaleString('ko-KR') : '';
+    showToast('☁️ 데이터 불러오기 완료! (' + COURSES.length + '건' + (savedAt?' · '+savedAt:'') + ')', 's');
+  })
+  .catch(function(err){
+    if(btn){ btn.textContent='☁️ 설정 불러오기'; btn.disabled=false; }
+    showToast('불러오기 오류: '+err.message,'d');
+  });
+}
+
+// Firebase 실시간 설정 감지 (다른 기기에서 변경 시 자동 반영)
+function fbWatchSettings(){
+  _fbDb.ref('settings').on('value', function(snap){
+    const s = snap.val();
+    if(!s) return;
+    // 내가 방금 저장한 건 무시 (savedAt 비교)
+    try{
+      const local = JSON.parse(localStorage.getItem('kg_settings')||'{}');
+      if(local.savedAt === s.savedAt) return;
+    }catch(e){}
+    applySettings(s);
+    try{ localStorage.setItem('kg_settings', JSON.stringify(s)); }catch(e){}
+  });
+}
+
+function autoSaveSettings(){
+  const logoSub = (document.getElementById('logoSub')||{}).textContent||'';
+  const settings = {
+    columnDefs: COLUMN_DEFS.map(function(c){
+      return {key:c.key, label:c.label, visible:c.visible};
+    }),
+    sidebarSections: SIDEBAR_SECTIONS,
+    detailSections: DETAIL_SECTIONS,
+    logoSub: logoSub,
+    savedAt: new Date().toISOString()
+  };
+  // localStorage 즉시 저장
+  try{ localStorage.setItem('kg_settings', JSON.stringify(settings)); }catch(e){}
+  // 클라우드 백그라운드 저장 (토스트 없이 조용히)
+  fetch(_GAS_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify({type: 'settings', data: settings, updatedBy: logoSub})
+  }).catch(function(){});
+  // Firebase에도 동시 저장
+  _fbDb.ref('settings').set(settings).catch(function(){});
+}
 
 // ── 설정 적용 공통 함수
 function applySettings(s){
@@ -1874,7 +2043,7 @@ function loadFromCloud(){
   btn.textContent = '☁️ 불러오는 중...';
   btn.disabled = true;
 
-  fetch(_GAS_URL)
+  fetch(_GAS_URL + '?type=settings')
   .then(r => r.json())
   .then(res => {
     btn.textContent = orig; btn.disabled = false;
@@ -1971,7 +2140,7 @@ function downloadReadonlyHTML(){
   var TB='https://samplezone.campus21.co.kr/classkeyimg/';
 
   var ths='padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,.9);white-space:nowrap;position:sticky;top:0;background:#1A3A6B;z-index:10';
-  var thead=visCols.map(function(col){return '<th style="'+ths+'">'+col.label+'</th>';}).join('')+'<th style="'+ths+';width:60px"></th>';
+  var thead=visCols.map(function(col){return '<th style="'+ths+'">'+col.label+'</th>';}).join('');
 
   function ch(c,col){
     var v=c[col.key]||'';
@@ -2053,12 +2222,9 @@ function downloadReadonlyHTML(){
     '  var frag=document.createDocumentFragment();',
     '  _v.slice(_l,_l+PG).forEach(function(r){',
     '    var tr=document.createElement("tr");',
-    '    var hint=document.createElement("td");',
-    '    var sp=document.createElement("span");',
-    '    sp.className="rh";sp.textContent="상세보기 →";',
-    '    hint.appendChild(sp);',
     '    tr.innerHTML=r.h;',
-    '    tr.appendChild(hint);',
+    '    var nameTd=tr.querySelector("td:nth-child(2)");',
+    '    if(nameTd){var sp=document.createElement("span");sp.className="rh";sp.textContent="상세보기 →";nameTd.appendChild(sp);}',
     '    tr.onclick=(function(idx){return function(){openDP(idx);};})(r.i);',
     '    frag.appendChild(tr);',
     '  });',
@@ -2348,6 +2514,7 @@ function applyDpCfg(){
     openDetailPanel(_dpCurrentIdx);
   }
   showToast('상세 패널 설정이 적용되었습니다','s');
+  autoSaveSettings();
 }
 function resetDpCfg(){
   if(!confirm('기본값으로 복원할까요?')) return;
@@ -2680,6 +2847,7 @@ function applySidebarCfg(){
   closeSidebarCfg();
   buildSidebarFilters();
   renderTable();
+  autoSaveSettings();
 }
 function resetSidebarCfg(){
   SIDEBAR_SECTIONS=JSON.parse(JSON.stringify(DEFAULT_SIDEBAR_SECTIONS));
